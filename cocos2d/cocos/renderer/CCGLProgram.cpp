@@ -692,6 +692,16 @@ void GLProgram::setUniformLocationWith4i(GLint location, GLint i1, GLint i2, GLi
     }
 }
 
+void GLProgram::setUniformLocationWith1iv(GLint location, GLint* ints, unsigned int numberOfArrays)
+{
+	bool updated = updateUniformLocation(location, ints, sizeof(int)* 1 * numberOfArrays);
+
+	if (updated)
+	{
+		glUniform1iv((GLint)location, (GLsizei)numberOfArrays, ints);
+	}
+}
+
 void GLProgram::setUniformLocationWith2iv(GLint location, GLint* ints, unsigned int numberOfArrays)
 {
     bool updated = updateUniformLocation(location, ints, sizeof(int)*2*numberOfArrays);

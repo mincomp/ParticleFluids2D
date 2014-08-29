@@ -124,7 +124,7 @@ protected:
 			erroneousDensity = false;
 			for (int i = 0; i < particles.size(); i++)
 			{
-				if (Particle::getDensityErrorRate(particles[i].predictedDensity) > PCISPH_PARTICLE_ERROR_RATE)
+				if (Particle::getDensityErrorRate(particles[i].predictedDensity) > MAX_PCISPH_ERROR_RATE)
 				{
 					erroneousDensity = true;
 					break;

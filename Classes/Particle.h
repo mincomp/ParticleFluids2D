@@ -27,6 +27,7 @@ struct Neighbor
 struct Particle
 {
 	PhysicsBody* body;
+	Vec2 vel;
 	Vec2 pos;
 	Vec2 predictedPos;
 	std::vector<Neighbor> neighbors;

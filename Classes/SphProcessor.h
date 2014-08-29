@@ -41,8 +41,6 @@ public:
 		_info->add(joint);
 
 		grid = std::make_unique<SpatialGrid>(rect, range + 0.1 , range);
-
-		omp_set_num_threads(8);
 	}
 
 	virtual ~SPHProcessor()
@@ -60,12 +58,7 @@ public:
 
 	double getDefaultMass()
 	{
-		return defaultMass;
-	}
-
-	void setDefaultMass(double width, double height, int particleCount)
-	{
-		defaultMass = restDensity * width * height / particleCount;
+		return mass;
 	}
 
 	// From http://www.cs.cornell.edu/~bindel/class/cs5220-f11/code/sph.pdf Item6. Does not seem to work.
@@ -96,6 +89,11 @@ public:
 		{
 			p.body->applyImpulse(impulse);
 		}
+	}
+
+	int particleCount()
+	{
+		return particles.size();
 	}
 
 protected:
@@ -221,12 +219,19 @@ protected:
 
 		Vec2 forceCohesion = Vec2::ZERO;
 		Vec2 forceCurvature = Vec2::ZERO;
+		//for (auto& n : p.neighbors)
+		//{
+		//	forceCohesion = -SurfaceTensionConst2 * mass * mass * surfaceTensionCohesionKernel(n) * n.r.getNormalized();
+		//	forceCurvature = -SurfaceTensionConst2 * range * mass * (p.surfaceNormal - n.p->surfaceNormal);
+		//	p.forceSurface += 2 * restDensity / (p.density + n.p->density) * (forceCohesion + forceCurvature);
+		//}
 		for (auto& n : p.neighbors)
 		{
-			forceCohesion = -SurfaceTensionConst2 * mass * mass * surfaceTensionCohesionKernel(n) * n.r.getNormalized();
-			forceCurvature = -SurfaceTensionConst2 * range * mass * (p.surfaceNormal - n.p->surfaceNormal);
-			p.forceSurface += 2 * restDensity / (p.density + n.p->density) * (forceCohesion + forceCurvature);
+			forceCohesion =  mass * surfaceTensionCohesionKernel(n) * n.r.getNormalized();
+			forceCurvature = range * (p.surfaceNormal - n.p->surfaceNormal);
+			p.forceSurface += (p.densityInv + n.p->densityInv) * (forceCohesion + forceCurvature);
 		}
+		p.forceSurface *= 2 * restDensity * (-SurfaceTensionConst2) * mass;
 
 		assert(std::isfinite(p.forceSurface.x) && std::isfinite(p.forceSurface.y));
 	}
@@ -279,19 +284,19 @@ protected:
 	// From SPH 03'
 	static inline Vec2 pressureForce1(double mass, double pi, double pj, double rho_i_inv, double rho_j_inv, Vec2 wgrad)
 	{
-		return -mass * (pi + pj) / 2 * rho_j_inv * wgrad;
+		return (-mass * (pi + pj) / 2 * rho_j_inv) * wgrad;
 	}
 
 	// From PCISPH
 	static inline Vec2 pressureForce2(double mass, double pi, double pj, double rho_i_inv, double rho_j_inv, Vec2 wgrad)
 	{
-		return -mass * mass * (pi * rho_i_inv * rho_i_inv + pj * rho_j_inv * rho_j_inv) * wgrad;
+		return (-mass * mass * (pi * rho_i_inv * rho_i_inv + pj * rho_j_inv * rho_j_inv)) * wgrad;
 	}
 
 	// From SPH survivial kit
 	static inline Vec2 pressureForce3(double mass, double pi, double pj, double rho_i_inv, double rho_j_inv, Vec2 wgrad)
 	{
-		return -mass * (pi + pj) / 2 * rho_i_inv * rho_j_inv * wgrad;
+		return (-mass * (pi + pj) / 2 * rho_i_inv * rho_j_inv) * wgrad;
 	}
 
 	void calculateViscosityForce(Particle& p)
@@ -353,29 +358,33 @@ protected:
 	{
 		double mass = getDefaultMass();
 
+		// Pressure force restrictions.
+		for (auto& p : particles)
+		{
+			if (p.forcePressure.length() > maxPressureForce)
+				p.forcePressure.scale(maxPressureForce / p.forcePressure.length());
+		}
+
 #ifdef USE_OPENMP
 #pragma omp parallel for
 #endif
 		for (int i = 0; i < particles.size(); i++)
 		{
 			Particle& ps = particles[i];
+
 			Vec2 v = (ps.forcePressure + ps.forceViscosity + ps.forceSurface) / mass * dt;
 			// Add XSPH artifitial viscosity. See "Ghost SPH"
 			Vec2 vXSPH = v;
 			for (auto& n : ps.neighbors)
 			{
 				const Particle& pj = *n.p;
-				vXSPH += cXSPH * mass * pj.densityInv * (pj.body->getVelocity() - ps.body->getVelocity()) * wFuncP6(n); // v_ij = v_j - v_i;
+				vXSPH += (cXSPH * mass * pj.densityInv * wFuncP6(n)) * (pj.body->getVelocity() - ps.body->getVelocity()); // v_ij = v_j - v_i;
 			}
 			v = vXSPH;
 
-			if (v.length() > maxFluidSpeedDelta)
-			{
-				v = v / (v.length() / maxFluidSpeedDelta);
-			}
-
+			ps.vel = ps.body->getVelocity() + v;
 			ps.body->applyImpulse(mass * v); // Apply impulse for chipmunk.
-			ps.pos += dt * (ps.body->getVelocity() + v);
+			ps.pos += dt * ps.vel;
 		}
 	}
 

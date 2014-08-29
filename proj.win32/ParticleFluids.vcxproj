@@ -172,6 +172,7 @@ xcopy /Y /Q "$(EngineRoot)external\websockets\prebuilt\win32\*.*" "$(OutDir)"</C
   <ItemGroup>
     <None Include="..\Resources\colorCutoff.frag" />
     <None Include="..\Resources\metaball.frag" />
+    <None Include="..\Resources\particleProperties.frag" />
     <None Include="..\Resources\posTexColor.vert" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />

@@ -66,13 +66,16 @@
     </ResourceCompile>
   </ItemGroup>
   <ItemGroup>
-    <None Include="..\Resources\metaball.frag">
-      <Filter>resource</Filter>
-    </None>
     <None Include="..\Resources\posTexColor.vert">
       <Filter>resource</Filter>
     </None>
     <None Include="..\Resources\colorCutoff.frag">
+      <Filter>resource</Filter>
+    </None>
+    <None Include="..\Resources\particleProperties.frag">
+      <Filter>resource</Filter>
+    </None>
+    <None Include="..\Resources\metaball.frag">
       <Filter>resource</Filter>
     </None>
   </ItemGroup>

@@ -2,9 +2,20 @@
 #define __Constants_H__
 
 #define USE_OPENMP
+const int OPENMP_THREAD_COUNT = 4;
+
+// Fluid constants
+const double viscosity = 0;
+const double gasConstant = 20000;
+const double surfaceTension = 50000;
+const double SurfaceTensionConst2 = 0.2; // Cohesion and curvature based surface tension
+const double restDensity = 1;
 
 // For Particle
-const double range = 15;
+const double radius = 5;
+const double area = M_PI * radius * radius;
+const double mass = restDensity * area;
+const double range = 4 * radius;
 const double renderRange = range;
 const double halfRangeSq = (range / 2) * (range / 2);
 const double rangeSq = range * range;
@@ -22,31 +33,22 @@ const double visWLaplacianConst = 40 / M_PI / range4th;
 const double cohesionKernelConst = 10000 / range6th;
 
 // Physics world constants
-const double gravity = -100;
+const double gravity = -200;
 const double speedMultiplier = 1;
-
-// Fluid constants
-const double viscosity = 0;
-const double gasConstant = 20000;
-const double surfaceTension = 50000;
-const double SurfaceTensionConst2 = 0.05; // Cohesion and curvature based surface tension
-const double restDensity = 1;
-const int PARTICLE_COUNT = 2000;
 
 // SPH
 const double cXSPH = 0.05;
-const double maxFluidSpeedDelta = 50;
+const double maxPressureForce = 300000;
 const double boundaryThreshold = 0.03;
 
 // Basic SPH
 const int substep = 1;
 
 // PCISPH
-const int MAX_PCISPH_ITERATION = 4;
-const double MAX_PCISPH_ERROR_RATE = 0.1;
-const double PCISPH_PARTICLE_ERROR_RATE = 0.1;
-const double DELTA = 20000; // Here in contrast to PCISPH we define delta as a parameter so we can tune for better stability.
-const int PCISPH_SUBSTEP_COUNT = 2;
+const int MAX_PCISPH_ITERATION = 5;
+const double MAX_PCISPH_ERROR_RATE = 0.2;
+const double DELTA = 50000; // Here in contrast to PCISPH we define delta as a parameter so we can tune for better stability.
+const int PCISPH_SUBSTEP_COUNT = 1;
 
 enum SolverType
 {

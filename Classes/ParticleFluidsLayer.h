@@ -27,12 +27,14 @@ protected:
 	cocos2d::Scene* scene;
 	cocos2d::LabelTTF* sphStepTime;
 	cocos2d::LabelTTF* avgNeighborCount;
+	cocos2d::LabelTTF* particleCount;
 	SPHProcessor* sphProcessor;
 	MetaballRenderer* metaballRenderer;
 
 	RenderTexture* r;
 	DrawNode* n;
 	Sprite* m;
+	Sprite* background;
 	bool metaballView = false;
 
 	Size fluidSize;
@@ -44,9 +46,9 @@ protected:
 	void initLayerElements();
 	void initializeSPH();
 
-	void sprayParticle(float dt);
+	void addDrop(float dt);
 	PhysicsBody* addParticle(double x, double y);
-	void addSquaredAmountFluid(double x, double y, double width, double height, int count);
+	void addSquaredAmountFluid(double x, double y, double width, double height);
 	void addTrickle(double x, double y, double interval, int count);
 	void addBox(Vec2 point, Size size);
 	void setupMetaballView();

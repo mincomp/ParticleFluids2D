@@ -21,6 +21,8 @@ Scene* ParticleFluidsLayer::createScene()
 	// add layer as a child to scene
 	scene->addChild(layer);
 
+	omp_set_num_threads(OPENMP_THREAD_COUNT); // Setting thread num to core num causes instability when one of the core is being used.
+
 	// return the scene
 	return scene;
 }
@@ -43,6 +45,7 @@ ParticleFluidsLayer::~ParticleFluidsLayer()
 {
 	m->release();
 	r->release();
+	background->release();
 	metaballRenderer->release();
 }
 
@@ -150,7 +153,7 @@ void ParticleFluidsLayer::initLayerElements()
 	visibleSize = Director::getInstance()->getVisibleSize();
 	Vec2 origin = Director::getInstance()->getVisibleOrigin();
 	edgeRect = Rect(visibleSize.width / 2 - visibleSize.width / 4, 0, visibleSize.width / 2, visibleSize.height);
-	fluidSize = Size(edgeRect.size.width / 2, edgeRect.size.height / 2);
+	fluidSize = Size(edgeRect.size.width / 2, edgeRect.size.height);
 
 	// add a menu item with "X" image, which is clicked to quit the program.
 	// add a "close" icon to exit the progress. it's an autorelease object
@@ -168,12 +171,17 @@ void ParticleFluidsLayer::initLayerElements()
 	this->addChild(menu, 1);
 
 	// Add the background.
-	auto background = Sprite::create("Fish Tank.jpg");
-	background->setPositionZ(-10);
+	background = Sprite::create("Fish Tank 1024.png");
+	//background->setPositionZ(-10);
 	background->setAnchorPoint(Vec2(0.5, 0.5));
-	background->setPosition(visibleSize.width / 2, visibleSize.height / 2);
-	background->setContentSize(fluidSize);
-	//this->addChild(background);
+	//background->setPosition(visibleSize.width / 2, visibleSize.height / 2);
+	Rect textureRect = background->getTextureRect();
+	background->setTextureRect(
+		Rect(edgeRect.getMinX() + (textureRect.size.width - visibleSize.width) / 2,
+			edgeRect.getMinY() + (textureRect.size.height - visibleSize.height) / 2,
+			edgeRect.size.width,
+			edgeRect.size.height));
+	background->retain();
 
 	initializeSPH();
 
@@ -186,6 +194,10 @@ void ParticleFluidsLayer::initLayerElements()
 	avgNeighborCount->setAnchorPoint(Vec2(1, 2));
 	avgNeighborCount->setPosition(visibleSize.width, visibleSize.height);
 	this->addChild(avgNeighborCount);
+	particleCount = CCLabelTTF::create("name", "Helvetica", 20);
+	particleCount->setAnchorPoint(Vec2(1, 3));
+	particleCount->setPosition(visibleSize.width, visibleSize.height);
+	this->addChild(particleCount);
 	auto usage = CCLabelTTF::create("Space: toggle debug draw\nLeft click: add a box\nB: toggle boundary particle marking\nN: toggle boundary particle normal\nM: toggle metaball view\nR: reset\nD: show density, green:close to rest density;red:errorous density", "Helvetica", 20);
 	usage->setHorizontalAlignment(TextHAlignment::LEFT);
 	usage->setAnchorPoint(Vec2(0, 1));
@@ -217,19 +229,20 @@ void ParticleFluidsLayer::initializeSPH()
 		sphProcessor = new PCISPH(edgeRect, this);
 		break;
 	}
-	sphProcessor->setDefaultMass(fluidSize.width, fluidSize.height, PARTICLE_COUNT);
 	auto physicsWorld = scene->getPhysicsWorld();
 	physicsWorld->addJoint(sphProcessor);
 
 	// Setup SPH renderer.
-	metaballRenderer = MetaballRenderer::create(sphProcessor, edgeRect);
+	metaballRenderer = MetaballRenderer::create(sphProcessor, edgeRect, background);
 	metaballRenderer->retain();
 	this->addChild(metaballRenderer);
 
 	// Setup metaball view.
 	setupMetaballView();
 
-	addSquaredAmountFluid(edgeRect.getMaxX() - fluidSize.width, 0, fluidSize.width, fluidSize.height, PARTICLE_COUNT);
+	addSquaredAmountFluid(edgeRect.getMaxX() - fluidSize.width, 0, fluidSize.width, fluidSize.height);
+	//addSquaredAmountFluid(edgeRect.getMinX(), 0, edgeRect.size.width, fluidSize.width * fluidSize.height / edgeRect.size.width);
+
 	//addTrickle(edgeRect.getMidX(), edgeRect.getMidY(), 4.4, 100);
 
 	// Calcuate default mass base on current amount of fluids.
@@ -237,7 +250,7 @@ void ParticleFluidsLayer::initializeSPH()
 
 	//sphProcessor->applyImpulseToParticles(Vect(10000 / PARTICLE_COUNT * 1000, 0));
 
-	//schedule(schedule_selector(ParticleFluidsLayer::sprayParticle), 0.1, PARTICLE_COUNT, 0);
+	//schedule(schedule_selector(ParticleFluidsLayer::addDrop), 0, 1, 15);
 }
 
 void ParticleFluidsLayer::addTrickle(double x, double y, double interval, int count)
@@ -251,10 +264,9 @@ void ParticleFluidsLayer::addTrickle(double x, double y, double interval, int co
 	}
 }
 
-void ParticleFluidsLayer::sprayParticle(float dt)
+void ParticleFluidsLayer::addDrop(float dt)
 {
-	auto body = addParticle(visibleSize.width / 2 - visibleSize.width / 10 + 30, visibleSize.height - 100);
-	body->applyImpulse(Vect(0, -2000));
+	addSquaredAmountFluid(edgeRect.getMidX() - 10, edgeRect.getMaxY() - 30, 7, 30);
 }
 
 PhysicsBody* ParticleFluidsLayer::addParticle(double x, double y)
@@ -350,8 +362,9 @@ void ParticleFluidsLayer::addBox(Vec2 point, Size size)
 	this->addChild(box);
 }
 
-void ParticleFluidsLayer::addSquaredAmountFluid(double x, double y, double width, double height, int count)
+void ParticleFluidsLayer::addSquaredAmountFluid(double x, double y, double width, double height)
 {
+	int count = (int)(width * height / area);
 	double unit = sqrt(count / (width * height)); // (w*unit) * (h*unit) =count
 	int xCount = width * unit;
 	int yCount = count / xCount;
@@ -385,15 +398,20 @@ void ParticleFluidsLayer::update(float delta)
 			ss.str("");
 			ss << "Avg neighbor count " << t_avgNeighbor;
 			avgNeighborCount->setString(ss.str());
+			ss.str("");
+			ss << "Particle count " << sphProcessor->particleCount();
+			particleCount->setString(ss.str());
 			cumulatedDelta = 0;
 		}
 
-		r->beginWithClear(0, 0, 0, 1);
-		n->clear();
-		n->drawDot(Vec2(100, 100), 100, Color4F(1, 1, 1, 1));
-		n->drawDot(Vec2(200, 100), 100, Color4F(1, 1, 1, 1));
-		n->visit();
-		r->end();
+		//r->beginWithClear(0, 0, 0, 1);
+		//n->clear();
+		//n->drawDot(Vec2(100, 100), 100, Color4F(1, 1, 1, 1));
+		//n->drawDot(Vec2(200, 100), 100, Color4F(1, 1, 1, 1));
+		//n->visit();
+		//r->end();
+
+		metaballRenderer->update();
 	}
 	catch (...)
 	{

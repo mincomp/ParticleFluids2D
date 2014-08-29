@@ -15,9 +15,9 @@ const float METABALL_LAYER_Z = -9;
 class MetaballRenderer : public Node
 {
 public:
-	static MetaballRenderer* create(SPHProcessor* processor, Rect renderRect)
+	static MetaballRenderer* create(SPHProcessor* processor, Rect renderRect, Sprite* rawBackgroundSp)
 	{
-		MetaballRenderer* renderer = new MetaballRenderer(processor, renderRect);
+		MetaballRenderer* renderer = new MetaballRenderer(processor, renderRect, rawBackgroundSp);
 		renderer->autorelease();
 
 		return renderer;
@@ -28,96 +28,175 @@ public:
 		debugDrawMask ^= mask;
 	}
 
+	void update()
+	{
+		const auto& particles = processor->particles;
+
+		// 1. Draw particle properties onto the render target.
+		{
+			particleProperties->beginWithClear(0, 0, 0, 1);
+
+			drawNode->clear();
+			auto programState = drawNode->getGLProgramState();
+
+			for (auto& p : particles)
+			{
+				Vec2 vel = p.vel;
+				drawNode->drawDot(p.pos - renderRect.origin, renderRange, Color4F(vel.x, vel.y, 1, 1));
+			}
+
+			drawNode->visit();
+			particleProperties->end();
+		}
+
+		// 2. Render the refracted background with particle properties.
+		{
+			refractedBackground->beginWithClear(0, 0, 0, 1);
+
+			backgroundSp->visit();
+
+			refractedBackground->end();
+		}
+
+		// 3. Render the final image with color cutoff and debug information.
+		{
+			finalImage->beginWithClear(0, 0, 0, 1);
+
+			refractedBackgroundSp->visit();
+
+			// Add debug information.
+			const auto& boundaryParticles = processor->boundaryParticles;
+
+			debugDrawNode->clear();
+			for (int id : boundaryParticles)
+			{
+				const Particle& p = particles[id];
+				Vec2 pos = p.pos - renderRect.origin;
+				if (debugDrawMask & DEBUG_DRAW_BOUNDARY)
+				{
+					debugDrawNode->drawDot(pos, 2, Color4F(1, 1, 1, 1));
+				}
+
+				if (debugDrawMask & DEBUG_DRAW_BOUNDARY_NORMAL)
+				{
+					debugDrawNode->drawSegment(pos, pos + p.surfaceNormal / p.surfaceNormal.getLength() * 10, 1, Color4F(1, 0, 0, 1));
+				}
+			}
+
+			for (auto& p : particles)
+			{
+				Vec2 pos = p.pos - renderRect.origin;
+				if (debugDrawMask & DEBUG_DRAW_DENSITY)
+				{
+					if (Particle::getDensityErrorRate(p.density) > MAX_PCISPH_ERROR_RATE)
+					{
+						debugDrawNode->drawDot(pos, 1, Color4F(1, 0, 0, 1));
+					}
+					else
+					{
+						debugDrawNode->drawDot(pos, 1, Color4F(0, 1, 0, 1));
+					}
+				}
+			}
+
+			debugDrawNode->visit();
+
+			finalImage->end();
+		}
+	}
+
 protected:
 	SPHProcessor* processor;
 	Rect renderRect;
 	int debugDrawMask = 0;
 	DrawNode* drawNode;
 	DrawNode* debugDrawNode;
-	RenderTexture* renderTarget;
-	Sprite* sprite;
+	RenderTexture* background;
+	RenderTexture* refractedBackground;
+	RenderTexture* particleProperties;
+	RenderTexture* finalImage;
+	
+	Sprite* rawBackgroundSp;
+	Sprite* backgroundSp;
+	Sprite* refractedBackgroundSp;
+	Sprite* finalImageSp;
 
-	MetaballRenderer(SPHProcessor* processor, Rect renderRect)
+	MetaballRenderer(SPHProcessor* processor, Rect renderRect, Sprite* rawBackgroundSp)
 	{
+		this->rawBackgroundSp = rawBackgroundSp;
 		this->processor = processor;
 		this->renderRect = renderRect;
 
-		renderTarget = RenderTexture::create(renderRect.size.width, renderRect.size.height);
-		renderTarget->retain();
+		background = RenderTexture::create(renderRect.size.width, renderRect.size.height);
+		rawBackgroundSp->setPosition(renderRect.size.width / 2, renderRect.size.height / 2);
+		background->retain();
+		refractedBackground = RenderTexture::create(renderRect.size.width, renderRect.size.height);
+		refractedBackground->retain();
+		particleProperties = RenderTexture::create(renderRect.size.width, renderRect.size.height);
+		particleProperties->retain();
+		finalImage = RenderTexture::create(renderRect.size.width, renderRect.size.height);
+		finalImage->retain();
 
 		setPositionZ(METABALL_LAYER_Z);
-		drawNode = DrawNode::create();
-		//drawNode->setBlendFunc(BlendFunc::ADDITIVE);
-		drawNode->retain();
 
+		// Create the draw node for particles.
+		drawNode = DrawNode::create();
+		drawNode->setBlendFunc(BlendFunc::ADDITIVE);
+		drawNode->retain();
+		GLProgram* p1 = GLProgram::createWithFilenames("posTexColor.vert", "particleProperties.frag");
+		drawNode->setGLProgram(p1);
+		auto p1State = GLProgramState::getOrCreateWithGLProgram(p1);
+		drawNode->setGLProgramState(p1State);
+
+		// Create the debugDrawNode.
 		debugDrawNode = DrawNode::create();
 		debugDrawNode->retain();
 
-		GLProgram* p = GLProgram::createWithFilenames("posTexColor.vert", "metaball.frag");
-		this->drawNode->setGLProgram(p);
+		// 0. Draw raw background sprite into background render target.
+		{
+			background->beginWithClear(0, 0, 0, 1);
+			rawBackgroundSp->visit();
+			background->end();
+		}
 
-		sprite = Sprite::createWithTexture(renderTarget->getSprite()->getTexture());
-		sprite->setPosition(Vec2(renderRect.getMidX(), renderRect.getMidY()));
-		sprite->setFlippedY(true);
-		GLProgram* pp = GLProgram::createWithFilenames("posTexColor.vert", "colorCutoff.frag");
-		sprite->setGLProgram(pp);
-		this->addChild(sprite);
+		// Create the background sprite.
+		backgroundSp = Sprite::createWithTexture(background->getSprite()->getTexture());
+		backgroundSp->setPosition(renderRect.size.width / 2, renderRect.size.height / 2);
+		backgroundSp->setFlippedY(true);
+		GLProgram* p2 = GLProgram::createWithFilenames("posTexColor.vert", "metaball.frag");
+		backgroundSp->setGLProgram(p2);
+		backgroundSp->retain();
+
+		auto p2State = GLProgramState::getOrCreateWithGLProgram(p2);
+		p2State->setUniformTexture("background", background->getSprite()->getTexture());
+		p2State->setUniformTexture("particleProperties", particleProperties->getSprite()->getTexture());
+		backgroundSp->setGLProgramState(p2State);
+
+		// Create the refracted background sprite.
+		refractedBackgroundSp = Sprite::createWithTexture(refractedBackground->getSprite()->getTexture());
+		refractedBackgroundSp->setPosition(renderRect.size.width / 2, renderRect.size.height / 2);
+		refractedBackgroundSp->setFlippedY(true);
+		//GLProgram* p3 = GLProgram::createWithFilenames("posTexColor.vert", "colorCutoff.frag");
+		//refractedBackgroundSp->setGLProgram(p3);
+		refractedBackgroundSp->retain();
+
+		//// Create the final image sprite.
+		finalImageSp = Sprite::createWithTexture(finalImage->getSprite()->getTexture());
+		finalImageSp->setPosition(Vec2(renderRect.getMidX(), renderRect.getMidY()));
+		finalImageSp->setFlippedY(true);
+		this->addChild(finalImageSp);
 	}
 
 	~MetaballRenderer()
 	{
-		renderTarget->release();
+		refractedBackground->release();
+		particleProperties->release();
+		finalImage->release();
 		drawNode->release();
-	}
+		debugDrawNode->release();
 
-	virtual void draw(cocos2d::Renderer *renderer, const cocos2d::Mat4 &transform, uint32_t flags) override
-	{
-		renderTarget->beginWithClear(0, 0, 0, 1);
-
-		drawNode->clear();
-		const auto& particles = processor->particles;
-		const auto& boundaryParticles = processor->boundaryParticles;
-		for (const Particle& p : particles)
-		{
-			drawNode->drawDot(p.body->getPosition() - renderRect.origin, renderRange, Color4F(0, 127.0 / 255.0, 1, 1));
-		}
-
-		debugDrawNode->clear();
-		for (int id : boundaryParticles)
-		{
-			const Particle& p = particles[id];
-			Vec2 pos = p.body->getPosition() - renderRect.origin;
-			if (debugDrawMask & DEBUG_DRAW_BOUNDARY)
-			{
-				debugDrawNode->drawDot(pos, 2, Color4F(1, 1, 1, 1));
-			}
-
-			if (debugDrawMask & DEBUG_DRAW_BOUNDARY_NORMAL)
-			{
-				debugDrawNode->drawSegment(pos, pos + p.surfaceNormal / p.surfaceNormal.getLength() * 10, 1, Color4F(1, 0, 0, 1));
-			}
-		}
-
-		for (auto& p : particles)
-		{
-			Vec2 pos = p.body->getPosition() - renderRect.origin;
-			if (debugDrawMask & DEBUG_DRAW_DENSITY)
-			{
-				if (Particle::getDensityErrorRate(p.density) > PCISPH_PARTICLE_ERROR_RATE)
-				{
-					debugDrawNode->drawDot(pos, 1, Color4F(1, 0, 0, 1));
-				}
-				else
-				{
-					debugDrawNode->drawDot(pos, 1, Color4F(0, 1, 0, 1));
-				}
-			}
-		}
-
-		drawNode->visit();
-		debugDrawNode->visit();
-
-		renderTarget->end();
+		backgroundSp->release();
+		refractedBackgroundSp->release();
 	}
 };
 

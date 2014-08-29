@@ -23,7 +23,7 @@ static inline Vec2 wGradientFuncP6(const Vec2& r)
 
 	double lenSq = r.getLengthSq();
 
-	return p6WGradientConst * (rangeSq - lenSq) * (rangeSq - lenSq) * r;
+	return (p6WGradientConst * (rangeSq - lenSq) * (rangeSq - lenSq)) * r;
 }
 
 static inline double wLaplacianFuncP6(const Vec2& r)
@@ -80,7 +80,7 @@ static inline Vec2 wGradientFuncP6(const Neighbor& n)
 {
 	assert(n.r.getLengthSq() <= rangeSq);
 
-	return p6WGradientConst * (rangeSq - n.rLenSq) * (rangeSq - n.rLenSq) * n.r;
+	return (p6WGradientConst * (rangeSq - n.rLenSq) * (rangeSq - n.rLenSq)) * n.r;
 }
 
 static inline double wLaplacianFuncP6(const Neighbor& n)
